@@ -1,0 +1,17 @@
+version: '2.3'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./app:/app
+    environment:
+      FLASK_APP: main.py
+      FLASK_RUN_HOST: 0.0.0.0
+      FLAS_RUN_PORT: 5000
+    
+    command: flask run
+
+      
