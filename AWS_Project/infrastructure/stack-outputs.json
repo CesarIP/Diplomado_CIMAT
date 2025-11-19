@@ -1,0 +1,56 @@
+[
+    {
+        "OutputKey": "LambdaECRRepositoryUri",
+        "OutputValue": "024074523310.dkr.ecr.us-east-1.amazonaws.com/productsapp-lambda-prod",
+        "Description": "URI del repositorio ECR para Lambda",
+        "ExportName": "productsapp-prod-LambdaECR"
+    },
+    {
+        "OutputKey": "ApiGatewayUrl",
+        "OutputValue": "https://3i917d1b49.execute-api.us-east-1.amazonaws.com/prod",
+        "Description": "URL del API Gateway",
+        "ExportName": "productsapp-prod-ApiUrl"
+    },
+    {
+        "OutputKey": "VPCId",
+        "OutputValue": "vpc-07efae553f5402e51",
+        "Description": "ID de la VPC",
+        "ExportName": "productsapp-prod-VPC"
+    },
+    {
+        "OutputKey": "PublicSubnetId",
+        "OutputValue": "subnet-00d4fd90a55665202",
+        "Description": "ID de la subnet p?blica",
+        "ExportName": "productsapp-prod-PublicSubnet"
+    },
+    {
+        "OutputKey": "LambdaFunctionArn",
+        "OutputValue": "arn:aws:lambda:us-east-1:024074523310:function:productsapp-api-prod",
+        "Description": "ARN de la funci?n Lambda",
+        "ExportName": "productsapp-prod-LambdaArn"
+    },
+    {
+        "OutputKey": "EC2SecurityGroupId",
+        "OutputValue": "sg-0823bf75adacdebf8",
+        "Description": "ID del Security Group de EC2",
+        "ExportName": "productsapp-prod-EC2SG"
+    },
+    {
+        "OutputKey": "DynamoDBTableName",
+        "OutputValue": "productsapp-prod-Products",
+        "Description": "Nombre de la tabla DynamoDB",
+        "ExportName": "productsapp-prod-TableName"
+    },
+    {
+        "OutputKey": "EC2AppECRRepositoryUri",
+        "OutputValue": "024074523310.dkr.ecr.us-east-1.amazonaws.com/productsapp-ec2app-prod",
+        "Description": "URI del repositorio ECR para EC2 App",
+        "ExportName": "productsapp-prod-EC2AppECR"
+    },
+    {
+        "OutputKey": "EC2InstanceProfileArn",
+        "OutputValue": "arn:aws:iam::024074523310:instance-profile/productsapp-ec2-profile-prod",
+        "Description": "ARN del Instance Profile de EC2",
+        "ExportName": "productsapp-prod-EC2Profile"
+    }
+]

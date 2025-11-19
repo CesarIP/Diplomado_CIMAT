@@ -1,0 +1,478 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Infraestructura completa para aplicación con Lambda, API Gateway, DynamoDB y ECR'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: productsapp
+    Description: Nombre del proyecto
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Ambiente de despliegue
+
+  DeployLambda:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Desplegar Lambda y API Gateway (requiere imagen en ECR)
+
+Conditions:
+  ShouldDeployLambda: !Equals [!Ref DeployLambda, 'true']
+
+Resources:
+  # ==========================================
+  # DynamoDB Table
+  # ==========================================
+  ProductsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}-Products'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ==========================================
+  # ECR Repository para Lambda
+  # ==========================================
+  LambdaECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-lambda-${Environment}'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ==========================================
+  # ECR Repository para EC2 App
+  # ==========================================
+  EC2AppECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-ec2app-${Environment}'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ==========================================
+  # IAM Role para Lambda
+  # ==========================================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:UpdateItem'
+                  - 'dynamodb:DeleteItem'
+                  - 'dynamodb:Scan'
+                  - 'dynamodb:Query'
+                Resource: !GetAtt ProductsTable.Arn
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ==========================================
+  # Lambda Function (placeholder - debe actualizarse con imagen de ECR)
+  # ==========================================
+  ProductsLambdaFunction:
+    Type: AWS::Lambda::Function
+    Condition: ShouldDeployLambda
+    Properties:
+      FunctionName: !Sub '${ProjectName}-api-${Environment}'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      PackageType: Image
+      Code:
+        ImageUri: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${LambdaECRRepository}:latest'
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref ProductsTable
+          ENVIRONMENT: !Ref Environment
+      Timeout: 30
+      MemorySize: 512
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # ==========================================
+  # Lambda Permission para API Gateway
+  # ==========================================
+  LambdaApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Condition: ShouldDeployLambda
+    Properties:
+      FunctionName: !Ref ProductsLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ProductsApiGateway}/*/*'
+
+  # ==========================================
+  # API Gateway REST API
+  # ==========================================
+  ProductsApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Condition: ShouldDeployLambda
+    Properties:
+      Name: !Sub '${ProjectName}-api-${Environment}'
+      Description: API Gateway para gestión de productos
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # API Gateway Resource - /products
+  ProductsResource:
+    Type: AWS::ApiGateway::Resource
+    Condition: ShouldDeployLambda
+    Properties:
+      RestApiId: !Ref ProductsApiGateway
+      ParentId: !GetAtt ProductsApiGateway.RootResourceId
+      PathPart: products
+
+  # API Gateway Resource - /products/{id}
+  ProductIdResource:
+    Type: AWS::ApiGateway::Resource
+    Condition: ShouldDeployLambda
+    Properties:
+      RestApiId: !Ref ProductsApiGateway
+      ParentId: !Ref ProductsResource
+      PathPart: '{id}'
+
+  # Métodos GET, POST para /products
+  ProductsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Condition: ShouldDeployLambda
+    Properties:
+      RestApiId: !Ref ProductsApiGateway
+      ResourceId: !Ref ProductsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations'
+
+  ProductsPostMethod:
+    Type: AWS::ApiGateway::Method
+    Condition: ShouldDeployLambda
+    Properties:
+      RestApiId: !Ref ProductsApiGateway
+      ResourceId: !Ref ProductsResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations'
+
+  # Métodos GET, PUT, DELETE para /products/{id}
+  ProductIdGetMethod:
+    Type: AWS::ApiGateway::Method
+    Condition: ShouldDeployLambda
+    Properties:
+      RestApiId: !Ref ProductsApiGateway
+      ResourceId: !Ref ProductIdResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations'
+
+  ProductIdPutMethod:
+    Type: AWS::ApiGateway::Method
+    Condition: ShouldDeployLambda
+    Properties:
+      RestApiId: !Ref ProductsApiGateway
+      ResourceId: !Ref ProductIdResource
+      HttpMethod: PUT
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations'
+
+  ProductIdDeleteMethod:
+    Type: AWS::ApiGateway::Method
+    Condition: ShouldDeployLambda
+    Properties:
+      RestApiId: !Ref ProductsApiGateway
+      ResourceId: !Ref ProductIdResource
+      HttpMethod: DELETE
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProductsLambdaFunction.Arn}/invocations'
+
+  # API Gateway Deployment
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Condition: ShouldDeployLambda
+    DependsOn:
+      - ProductsGetMethod
+      - ProductsPostMethod
+      - ProductIdGetMethod
+      - ProductIdPutMethod
+      - ProductIdDeleteMethod
+    Properties:
+      RestApiId: !Ref ProductsApiGateway
+      StageName: !Ref Environment
+
+  # ==========================================
+  # VPC para EC2
+  # ==========================================
+  AppVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vpc-${Environment}'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-igw-${Environment}'
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref AppVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Subnet
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-subnet-${Environment}'
+
+  # Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref AppVPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-rt-${Environment}'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # Security Group para EC2
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-ec2-sg-${Environment}'
+      GroupDescription: Security group para EC2 con Streamlit
+      VpcId: !Ref AppVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8501
+          ToPort: 8501
+          CidrIp: 0.0.0.0/0
+          Description: Streamlit
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          Description: SSH
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-ec2-sg-${Environment}'
+
+  # IAM Role para EC2
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-ec2-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly'
+        - 'arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${ProjectName}-ec2-profile-${Environment}'
+      Roles:
+        - !Ref EC2Role
+
+Outputs:
+  DynamoDBTableName:
+    Description: Nombre de la tabla DynamoDB
+    Value: !Ref ProductsTable
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-TableName'
+
+  LambdaFunctionArn:
+    Condition: ShouldDeployLambda
+    Description: ARN de la función Lambda
+    Value: !GetAtt ProductsLambdaFunction.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LambdaArn'
+
+  ApiGatewayUrl:
+    Condition: ShouldDeployLambda
+    Description: URL del API Gateway
+    Value: !Sub 'https://${ProductsApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ApiUrl'
+
+  LambdaECRRepositoryUri:
+    Description: URI del repositorio ECR para Lambda
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${LambdaECRRepository}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-LambdaECR'
+
+  EC2AppECRRepositoryUri:
+    Description: URI del repositorio ECR para EC2 App
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${EC2AppECRRepository}'
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2AppECR'
+
+  VPCId:
+    Description: ID de la VPC
+    Value: !Ref AppVPC
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-VPC'
+
+  PublicSubnetId:
+    Description: ID de la subnet pública
+    Value: !Ref PublicSubnet
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-PublicSubnet'
+
+  EC2SecurityGroupId:
+    Description: ID del Security Group de EC2
+    Value: !Ref EC2SecurityGroup
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2SG'
+
+  EC2InstanceProfileArn:
+    Description: ARN del Instance Profile de EC2
+    Value: !GetAtt EC2InstanceProfile.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2Profile'

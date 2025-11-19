@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  lambda-test:
+    build:
+      context: ./lambda
+      dockerfile: Dockerfile
+    container_name: lambda-local
+    environment:
+      - DYNAMODB_TABLE=ProductsTable
+      - AWS_REGION=us-east-1
+    ports:
+      - "9000:8080"
+
+  ec2-app:
+    build:
+      context: ./ec2_app
+      dockerfile: Dockerfile
+    container_name: ec2-app-local
+    environment:
+      - API_GATEWAY_URL=http://localhost:9000/2015-03-31/functions/function/invocations
+    ports:
+      - "8501:8501"
+    depends_on:
+      - lambda-test
