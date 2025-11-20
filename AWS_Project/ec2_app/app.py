@@ -28,27 +28,51 @@ def create_product(product_data):
     """Crear un nuevo producto"""
     try:
         response = requests.post(f"{API_URL}/products", json=product_data)
-        return response.status_code == 201
+        if response.status_code == 201:
+            return True
+        else:
+            error_msg = response.json().get('error', 'Error desconocido') if response.text else 'Sin respuesta del servidor'
+            st.error(f"Error al crear producto (código {response.status_code}): {error_msg}")
+            return False
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error de conexión: {str(e)}")
+        return False
     except Exception as e:
-        st.error(f"Error al crear producto: {str(e)}")
+        st.error(f"Error inesperado: {str(e)}")
         return False
 
 def update_product(product_id, product_data):
     """Actualizar un producto"""
     try:
         response = requests.put(f"{API_URL}/products/{product_id}", json=product_data)
-        return response.status_code == 200
+        if response.status_code == 200:
+            return True
+        else:
+            error_msg = response.json().get('error', 'Error desconocido') if response.text else 'Sin respuesta del servidor'
+            st.error(f"Error al actualizar producto (código {response.status_code}): {error_msg}")
+            return False
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error de conexión: {str(e)}")
+        return False
     except Exception as e:
-        st.error(f"Error al actualizar producto: {str(e)}")
+        st.error(f"Error inesperado: {str(e)}")
         return False
 
 def delete_product(product_id):
     """Eliminar un producto"""
     try:
         response = requests.delete(f"{API_URL}/products/{product_id}")
-        return response.status_code == 200
+        if response.status_code == 200:
+            return True
+        else:
+            error_msg = response.json().get('error', 'Error desconocido') if response.text else 'Sin respuesta del servidor'
+            st.error(f"Error al eliminar producto (código {response.status_code}): {error_msg}")
+            return False
+    except requests.exceptions.RequestException as e:
+        st.error(f"Error de conexión: {str(e)}")
+        return False
     except Exception as e:
-        st.error(f"Error al eliminar producto: {str(e)}")
+        st.error(f"Error inesperado: {str(e)}")
         return False
 
 # Título principal

@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import sys
+import json
 
 # Importar el handler de Lambda
 sys.path.insert(0, os.path.dirname(__file__))
@@ -33,7 +34,15 @@ def products():
     
     response = lambda_handler(event, {})
     
-    return jsonify(response.get('body', {})), response.get('statusCode', 200)
+    # Parsear el body si es string JSON
+    response_body = response.get('body', '{}')
+    if isinstance(response_body, str):
+        try:
+            response_body = json.loads(response_body)
+        except:
+            pass
+    
+    return jsonify(response_body), response.get('statusCode', 200)
 
 @app.route('/products/<product_id>', methods=['GET', 'PUT', 'DELETE'])
 def product_detail(product_id):
